@@ -76,6 +76,8 @@ public:
 		space(board::size_x * board::size_y), who(board::empty) {
 		if (name().find_first_of("[]():; ") != std::string::npos)
 			throw std::invalid_argument("invalid name: " + name());
+		if (meta.find("search") != meta.end()) action_mode(meta["search"]);
+		if (meta.find("timeout") != meta.end()) timeout(meta["timeout"]);
 		if (role() == "black") who = board::black;
 		if (role() == "white") who = board::white;
 		if (who == board::empty)
@@ -84,19 +86,74 @@ public:
 			space[i] = action::place(i, who);
 	}
 
-	virtual action take_action(const board& state) {
-		std::shuffle(space.begin(), space.end(), engine);
-		for (const action::place& move : space) {
-			board after = state;
-			if (move.apply(after) == board::legal)
-				return move;
+	virtual action take_action(const board& state, string action_mode) {
+		// default action : random
+		if (action_mode == "random" or action_mode.empty()){
+			std::shuffle(space.begin(), space.end(), engine);
+			for (const action::place& move : space) {
+				board after = state;
+				if (move.apply(after) == board::legal)
+					return move;
+			}
+			return action();
 		}
-		return action();
+		
+
+		else if (action_mode == "MCTS"){
+			clock_t start_time, end_time, total_time = 0;
+			start_time = clock();
+			
+			Node* root = new Node;
+			board::piece_type winner;
+			int total_visit_count = 0;
+			int empty_space = 0;
+			for(int i = 0; i < 9; ++i) {
+				for(int j = 0; j < 9; ++j) {
+					if(state[i][j] == board::empty)
+						++empty_space;
+				}
+			}
+			
+			root->state = state;
+			root->who = (who == board::white ? board::black : board::white);
+			expension(root);
+			end_time = clock();
+			total_time += (start_time - end_time);
+			while(total_time < time_limit) {
+				start_time = clock();
+				
+				Node* best_node = selection(root);
+				expension(best_node);
+				winner = simulation(best_node);
+				
+				++total_visit_count;
+				backpropagation(root, best_node, winner, total_visit_count);
+				
+				end_time = clock();
+				total_time += (end_time - start_time);
+				//std::cout <<"This search cost:" << end_time - start_time << "ms" << std::endl;
+			}
+
+			action best_action = bestAaction(root);
+			delete_tree(root);
+			free(root);
+			
+			return best_action;
+		}
+		else if (action_mode == "alpha-beta") {
+			throw std::invalid_argument("not be implemented");
+		}
+		else {
+			throw std::invalid_argument("illegal action mode");
+		}
+		
 	}
 
 private:
 	std::vector<action::place> space;
 	board::piece_type who;
+	string action_mode;
+	clock_t timeout = 1000;
 };
 
 class Node {
@@ -113,7 +170,7 @@ public:
 	~Node(){};
 };
 
-class MCTS_player : public random_agent {
+class MCTS_agent : public random_agent {
 public:
 	MCTS_player(const std::string& args = "") : random_agent("name=random role=unknown " + args),
 		white_space(board::size_x * board::size_y), black_space(board::size_x * board::size_y), 
@@ -270,69 +327,8 @@ public:
 		}
 	}
 	
-	virtual action take_action(const board& state) {
-		/*initialization*/
-		// new root node
-		
-		// begin the search
-		// while not time limit
-			//begin from root
-			// if exist the move not be invited
-				// Expension this node (add a node randomly)
-				// Simuate from this node until win/loss
-				// Backpropagation til root
-				// new while loop
-			// else (all children are visited)
-				// compute UCT values of each one
-				// take the maximum be the new root, continue searching
-			
-		// end while : time out
-		// choose the node has max win rate
-		//do this move
-		
-		clock_t start_time, end_time, total_time = 0;
-		start_time = clock();
-		
-		Node* root = new Node;
-		board::piece_type winner;
-		int total_visit_count = 0;
-		int empty_space = 0;
-		for(int i = 0; i < 9; ++i) {
-			for(int j = 0; j < 9; ++j) {
-				if(state[i][j] == board::empty)
-					++empty_space;
-			}
-		}
-		
-		root->state = state;
-		root->who = (who == board::white ? board::black : board::white);
-		expension(root);
-		end_time = clock();
-		total_time += (start_time - end_time);
-		while(total_time < time_limit) {
-			start_time = clock();
-			
-			Node* best_node = selection(root);
-			expension(best_node);
-			winner = simulation(best_node);
-			
-			++total_visit_count;
-			backpropagation(root, best_node, winner, total_visit_count);
-			
-			end_time = clock();
-			total_time += (end_time - start_time);
-			//std::cout <<"This search cost:" << end_time - start_time << "ms" << std::endl;
-		}
-
-		action best_action = bestAaction(root);
-		delete_tree(root);
-		free(root);
-		
-		return best_action;
-	}
 
 private:
 	std::vector<action::place> white_space, black_space;
 	board::piece_type who;
-	clock_t time_limit = 1000;
 };
