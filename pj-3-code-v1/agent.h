@@ -320,7 +320,8 @@ public:
 			backpropagation(root, best_node, winner, total_visit_count);
 			
 			end_time = clock();
-			total_time += (start_time - end_time);
+			total_time += (end_time - start_time);
+			//std::cout <<"This search cost:" << end_time - start_time << "ms" << std::endl;
 		}
 
 		action best_action = bestAaction(root);
