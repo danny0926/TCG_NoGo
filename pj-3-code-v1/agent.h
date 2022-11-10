@@ -85,7 +85,7 @@ public:
 	~Node(){};
 };
 
-class player : public MCTS_agent {
+class player : public random_agent {
 public:
 	player(const std::string& args = "") : MCTS_agent("name=random role=unknown " + args),
 		space(board::size_x * board::size_y), who(board::empty) {
@@ -99,95 +99,12 @@ public:
 			throw std::invalid_argument("invalid role: " + role());
 		for (size_t i = 0; i < space.size(); i++)
 			space[i] = action::place(i, who);
-	}
-
-	virtual action take_action(const board& state) {
-		// default action : random
-		if (action_mode == "random" or action_mode.empty()){
-			std::shuffle(space.begin(), space.end(), engine);
-			for (const action::place& move : space) {
-				board after = state;
-				if (move.apply(after) == board::legal)
-					return move;
-			}
-			return action();
-		}
-		
-
-		else if (action_mode == "MCTS"){
-			clock_t start_time, end_time, total_time = 0;
-			start_time = clock();
-			
-			Node* root = new Node;
-			board::piece_type winner;
-			int total_visit_count = 0;
-			int empty_space = 0;
-			for(int i = 0; i < 9; ++i) {
-				for(int j = 0; j < 9; ++j) {
-					if(state[i][j] == board::empty)
-						++empty_space;
-				}
-			}
-			
-			root->state = state;
-			root->who = (who == board::white ? board::black : board::white);
-			expension(root);
-			end_time = clock();
-			total_time += (start_time - end_time);
-			while(total_time < time_limit) {
-				start_time = clock();
-				
-				Node* best_node = selection(root);
-				expension(best_node);
-				winner = simulation(best_node);
-				
-				++total_visit_count;
-				backpropagation(root, best_node, winner, total_visit_count);
-				
-				end_time = clock();
-				total_time += (end_time - start_time);
-				//std::cout <<"This search cost:" << end_time - start_time << "ms" << std::endl;
-			}
-
-			action best_action = bestAaction(root);
-			delete_tree(root);
-			free(root);
-			
-			return best_action;
-		}
-		else if (action_mode == "alpha-beta") {
-			throw std::invalid_argument("not be implemented");
-		}
-		else {
-			throw std::invalid_argument("illegal action mode");
-		}
-		
-	}
-
-private:
-	std::vector<action::place> space;
-	board::piece_type who;
-	std::string action_mode;
-	clock_t timeout = 1000;
-};
-
-class MCTS_agent : public random_agent {
-public:
-	MCTS_player(const std::string& args = "") : random_agent("name=random role=unknown " + args),
-		white_space(board::size_x * board::size_y), black_space(board::size_x * board::size_y), 
-		who(board::empty) {
-		if (name().find_first_of("[]():; ") != std::string::npos)
-			throw std::invalid_argument("invalid name: " + name());
-		if (role() == "black") who = board::black;
-		if (role() == "white") who = board::white;
-		if (who == board::empty)
-			throw std::invalid_argument("invalid role: " + role());
 		for (size_t i = 0; i < white_space.size(); ++i)
 			white_space[i] = action::place(i, board::white);
 		for (size_t i = 0; i < black_space.size(); ++i)
 			black_space[i] = action::place(i, board::black);
 	}
-	
+	#################### begin of MCTS's tools ##########################
 	void computeUCT(Node* node, int total_visit_count) {
 		node->UCT_value = ((double)node->win_count/node->visit_count) + 0.5*sqrt(log((double)total_visit_count)/node->visit_count);
 	}
@@ -327,9 +244,101 @@ public:
 			node->children.clear();
 		}
 	}
+	####################  end of MCTS's tools ##########################
+
+	virtual action take_action(const board& state) {
+		// default action : random
+		if (action_mode == "random" or action_mode.empty()){
+			std::shuffle(space.begin(), space.end(), engine);
+			for (const action::place& move : space) {
+				board after = state;
+				if (move.apply(after) == board::legal)
+					return move;
+			}
+			return action();
+		}
+		
+
+		else if (action_mode == "MCTS"){
+			clock_t start_time, end_time, total_time = 0;
+			start_time = clock();
+			
+			Node* root = new Node;
+			board::piece_type winner;
+			int total_visit_count = 0;
+			int empty_space = 0;
+			for(int i = 0; i < 9; ++i) {
+				for(int j = 0; j < 9; ++j) {
+					if(state[i][j] == board::empty)
+						++empty_space;
+				}
+			}
+			
+			root->state = state;
+			root->who = (who == board::white ? board::black : board::white);
+			expension(root);
+			end_time = clock();
+			total_time += (start_time - end_time);
+			while(total_time < time_limit) {
+				start_time = clock();
+				
+				Node* best_node = selection(root);
+				expension(best_node);
+				winner = simulation(best_node);
+				
+				++total_visit_count;
+				backpropagation(root, best_node, winner, total_visit_count);
+				
+				end_time = clock();
+				total_time += (end_time - start_time);
+				//std::cout <<"This search cost:" << end_time - start_time << "ms" << std::endl;
+			}
+
+			action best_action = bestAaction(root);
+			delete_tree(root);
+			free(root);
+			
+			return best_action;
+		}
+		else if (action_mode == "alpha-beta") {
+			throw std::invalid_argument("not be implemented");
+		}
+		else {
+			throw std::invalid_argument("illegal action mode");
+		}
+		
+	}
+
+private:
+	std::vector<action::place> space, white_space, black_space;
+	board::piece_type who;
+	std::string action_mode;
+	clock_t timeout = 1000;
+};
+
+/*
+class MCTS_agent : public random_agent {
+public:
+	MCTS_player(const std::string& args = "") : random_agent("name=random role=unknown " + args),
+		white_space(board::size_x * board::size_y), black_space(board::size_x * board::size_y), 
+		who(board::empty) {
+		if (name().find_first_of("[]():; ") != std::string::npos)
+			throw std::invalid_argument("invalid name: " + name());
+		if (role() == "black") who = board::black;
+		if (role() == "white") who = board::white;
+		if (who == board::empty)
+			throw std::invalid_argument("invalid role: " + role());
+		for (size_t i = 0; i < white_space.size(); ++i)
+			white_space[i] = action::place(i, board::white);
+		for (size_t i = 0; i < black_space.size(); ++i)
+			black_space[i] = action::place(i, board::black);
+	}
+	
+	
 	
 
 private:
 	std::vector<action::place> white_space, black_space;
 	board::piece_type who;
 };
+*/
