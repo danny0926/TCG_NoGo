@@ -111,7 +111,7 @@ public:
 	board::piece_type who;
 	
 	~Node(){};
-}
+};
 
 class MCTS_player : public random_agent {
 public:
@@ -259,7 +259,7 @@ public:
 		return node->children[child_idx]->last_action;
 	}
 	
-	void delete_tree(Node* root) {
+	void delete_tree(Node* node) {
 		if(node->children.empty() == false) {
 			for(size_t i = 0; i < node->children.size(); ++i) {
 				delete_tree(node->children[i]);
@@ -290,7 +290,7 @@ public:
 		// choose the node has max win rate
 		//do this move
 		
-		clock_t start_time, end_time;
+		clock_t start_time, end_time, total_time = 0;
 		start_time = clock();
 		
 		Node* root = new Node;
@@ -312,7 +312,7 @@ public:
 		while(total_time < time_limit) {
 			start_time = clock();
 			
-			Node* best_node = select(root);
+			Node* best_node = selection(root);
 			expension(best_node);
 			winner = simulation(best_node);
 			
@@ -322,6 +322,7 @@ public:
 			end_time = clock();
 			total_time += (start_time - end_time);
 		}
+
 		action best_action = bestAaction(root);
 		delete_tree(root);
 		free(root);
@@ -333,4 +334,4 @@ private:
 	std::vector<action::place> white_space, black_space;
 	board::piece_type who;
 	clock_t time_limit = 1000;
-}
+};
