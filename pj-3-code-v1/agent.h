@@ -70,14 +70,29 @@ protected:
  * random player for both side
  * put a legal piece randomly
  */
-class player : public random_agent {
+
+class Node {
+public:
+        board state;
+        int win_count = 0;
+        int visit_count = 0;
+        double UCT_value = 0x3f3f3f3f;
+        Node* parent = nullptr;
+        action::place last_action;
+        std::vector<Node*> children;
+        board::piece_type who;
+
+	~Node(){};
+};
+
+class player : public MCTS_agent {
 public:
 	player(const std::string& args = "") : random_agent("name=random role=unknown " + args),
 		space(board::size_x * board::size_y), who(board::empty) {
 		if (name().find_first_of("[]():; ") != std::string::npos)
 			throw std::invalid_argument("invalid name: " + name());
-		if (meta.find("search") != meta.end()) action_mode(meta["search"]);
-		if (meta.find("timeout") != meta.end()) timeout(meta["timeout"]);
+		if (meta.find("search") != meta.end()) action_mode = (std::string)meta["search"];
+		if (meta.find("timeout") != meta.end()) timeout = (clock_t)meta["timeout"];
 		if (role() == "black") who = board::black;
 		if (role() == "white") who = board::white;
 		if (who == board::empty)
@@ -86,7 +101,7 @@ public:
 			space[i] = action::place(i, who);
 	}
 
-	virtual action take_action(const board& state, string action_mode) {
+	virtual action take_action(const board& state) {
 		// default action : random
 		if (action_mode == "random" or action_mode.empty()){
 			std::shuffle(space.begin(), space.end(), engine);
@@ -152,22 +167,8 @@ public:
 private:
 	std::vector<action::place> space;
 	board::piece_type who;
-	string action_mode;
+	std::string action_mode;
 	clock_t timeout = 1000;
-};
-
-class Node {
-public:
-	board state;
-	int win_count = 0;
-	int visit_count = 0;
-	double UCT_value = 0x3f3f3f3f;
-	Node* parent = nullptr;
-	action::place last_action;
-	std::vector<Node*> children;
-	board::piece_type who;
-	
-	~Node(){};
 };
 
 class MCTS_agent : public random_agent {
