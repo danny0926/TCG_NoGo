@@ -87,8 +87,11 @@ public:
 
 class player : public random_agent {
 public:
-	player(const std::string& args = "") : MCTS_agent("name=random role=unknown " + args),
-		space(board::size_x * board::size_y), who(board::empty) {
+	player(const std::string& args = "") : random_agent("name=random role=unknown " + args),
+		space(board::size_x * board::size_y),
+	        white_space(board::size_x * board::size_y),
+		black_space(board::size_x * board::size_y),
+		who(board::empty) {
 		if (name().find_first_of("[]():; ") != std::string::npos)
 			throw std::invalid_argument("invalid name: " + name());
 		if (meta.find("search") != meta.end()) action_mode = (std::string)meta["search"];
@@ -104,7 +107,7 @@ public:
 		for (size_t i = 0; i < black_space.size(); ++i)
 			black_space[i] = action::place(i, board::black);
 	}
-	#################### begin of MCTS's tools ##########################
+	/******************* begin of MCTS's tools **************************/
 	void computeUCT(Node* node, int total_visit_count) {
 		node->UCT_value = ((double)node->win_count/node->visit_count) + 0.5*sqrt(log((double)total_visit_count)/node->visit_count);
 	}
@@ -173,7 +176,7 @@ public:
 			
 			/*rival's round*/
 			who = (who == board::white ? board::black : board::white);
-			
+				
 			if (who == board::black) {
 				/* place randomly , apply the first legal move*/
 				std::shuffle(black_space.begin(), black_space.end(), engine);
@@ -189,7 +192,7 @@ public:
 			else if (who == board::white) {
 				/* place randomly , apply the first legal move*/
 				std::shuffle(white_space.begin(), white_space.end(), engine);
-				for(const action::place& move : black_space) {
+				for(const action::place& move : white_space) {
 					board after = state;
 					if (move.apply(after) == board::legal) {
 						move.apply(state);
@@ -200,7 +203,7 @@ public:
 			}
 		}
 		/*I have no legal move, rival win*/
-		return (who = (who == board::white ? board::black : board::white));
+		return (who == board::white ? board::black : board::white);
 	}
 	
 	void backpropagation(Node* root, Node* node, board::piece_type winner, int total_visit_count) {
@@ -223,9 +226,13 @@ public:
 	action bestAaction(Node* node) {
 		int child_idx = -1;
 		int max_visit_count = 0;
+		//double win_rate = 0;
 		for(size_t i = 0; i < node->children.size(); ++i) {
+			//double win_rate_tmp = (double)node->children[i]->win_count / (double)node->children[i]->visit_count;
+			//std::cout << "win: " << node->children[i]-> win_count << " , total: " << node->children[i]->visit_count << ", win rate: " << win_rate_tmp << std::endl;
 			if(node->children[i]->visit_count > max_visit_count) {
-				max_visit_count = node->children[i]->visit_count;
+				max_visit_count = node->children[i]->UCT_value;
+				//win_rate = win_tmp;
 				child_idx = i;
 			}
 		}
@@ -244,7 +251,7 @@ public:
 			node->children.clear();
 		}
 	}
-	####################  end of MCTS's tools ##########################
+	/******************* end of MCTS's tools **************************/
 
 	virtual action take_action(const board& state) {
 		// default action : random
@@ -266,35 +273,43 @@ public:
 			Node* root = new Node;
 			board::piece_type winner;
 			int total_visit_count = 0;
-			int empty_space = 0;
-			for(int i = 0; i < 9; ++i) {
-				for(int j = 0; j < 9; ++j) {
-					if(state[i][j] == board::empty)
-						++empty_space;
-				}
-			}
+			//int empty_space = 0;
+			//for(int i = 0; i < 9; ++i) {
+			//	for(int j = 0; j < 9; ++j) {
+			//		if(state[i][j] == board::empty)
+			//			++empty_space;
+			//	}
+			//}
+			//step_count = 36 - empty_space/2;
 			
 			root->state = state;
 			root->who = (who == board::white ? board::black : board::white);
 			expension(root);
-			end_time = clock();
-			total_time += (start_time - end_time);
-			while(total_time < time_limit) {
-				start_time = clock();
+			//end_time = clock();
+			//total_time += (end_time - start_time);
+
+			//std::cout << root->who << " is playing " << std::endl;
+			/* default time limit = 1s */ 
+			while(total_time < timeout) {
+				//start_time = clock();
 				
 				Node* best_node = selection(root);
+				//std::cout << "choose the node with state: " << std::endl;
+				//std::cout << best_node->state << std::endl;
 				expension(best_node);
 				winner = simulation(best_node);
+				//std::cout << winner << " in the simulation " << std::endl;
 				
 				++total_visit_count;
 				backpropagation(root, best_node, winner, total_visit_count);
-				
 				end_time = clock();
-				total_time += (end_time - start_time);
+				//total_time += (end_time - start_time);
+				total_time = (double)(end_time-start_time);
 				//std::cout <<"This search cost:" << end_time - start_time << "ms" << std::endl;
 			}
 
 			action best_action = bestAaction(root);
+			//std::cout << "take action : " << best_action << std::endl;
 			delete_tree(root);
 			free(root);
 			
@@ -314,6 +329,13 @@ private:
 	board::piece_type who;
 	std::string action_mode;
 	clock_t timeout = 1000;
+	//int step_count = 0;
+	//double time_schedule[36] = {0.2, 0.2, 0.2, 0.4, 0.4, 0.4,
+	//			    0.7, 0.7, 0.7, 1.4, 1.4, 1.4,
+	//			    1.7, 1.7, 1.7, 2.0, 2.0, 2.0,
+	//		   	    1.7, 1.7, 1.7, 1.7, 1.7, 1.7,
+	//			    1.0, 1.0, 1.0, 0.5, 0.5, 0.5,
+	//			    0.4, 0.4, 0.4, 0.2, 0.2, 0.2};
 };
 
 /*
