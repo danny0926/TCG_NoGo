@@ -96,6 +96,7 @@ public:
 			throw std::invalid_argument("invalid name: " + name());
 		if (meta.find("search") != meta.end()) action_mode = (std::string)meta["search"];
 		if (meta.find("timeout") != meta.end()) timeout = (clock_t)meta["timeout"];
+		if (meta.find("simulation") != meta.end()) simulation_count = (int)meta["simulation"];
 		if (role() == "black") who = board::black;
 		if (role() == "white") who = board::white;
 		if (who == board::empty)
@@ -115,7 +116,7 @@ public:
 	void expension(Node* parent_node) {
 		board::piece_type child_who;
 		action::place child_move;
-		
+	 		
 		if (parent_node->who == board::black) {
 			child_who = board::white;
 			for(const action::place& child_move : white_space) {
@@ -226,13 +227,11 @@ public:
 	action bestAaction(Node* node) {
 		int child_idx = -1;
 		int max_visit_count = 0;
-		//double win_rate = 0;
+		
 		for(size_t i = 0; i < node->children.size(); ++i) {
-			//double win_rate_tmp = (double)node->children[i]->win_count / (double)node->children[i]->visit_count;
-			//std::cout << "win: " << node->children[i]-> win_count << " , total: " << node->children[i]->visit_count << ", win rate: " << win_rate_tmp << std::endl;
+					
 			if(node->children[i]->visit_count > max_visit_count) {
-				max_visit_count = node->children[i]->UCT_value;
-				//win_rate = win_tmp;
+				max_visit_count = node->children[i]->visit_count;
 				child_idx = i;
 			}
 		}
@@ -289,24 +288,44 @@ public:
 			//total_time += (end_time - start_time);
 
 			//std::cout << root->who << " is playing " << std::endl;
-			/* default time limit = 1s */ 
-			while(total_time < timeout) {
-				//start_time = clock();
+			
+			
+			// default time limit = 1s //
+			if (simulation_count == 0) { 
+				while(total_time < timeout) {
+					//start_time = clock();
 				
-				Node* best_node = selection(root);
-				//std::cout << "choose the node with state: " << std::endl;
-				//std::cout << best_node->state << std::endl;
-				expension(best_node);
-				winner = simulation(best_node);
-				//std::cout << winner << " in the simulation " << std::endl;
+					Node* best_node = selection(root);
+					//std::cout << "choose the node with state: " << std::endl;
+					//std::cout << best_node->state << std::endl;
+					expension(best_node);
+					winner = simulation(best_node);
+					//std::cout << winner << " in the simulation " << std::endl;
 				
-				++total_visit_count;
-				backpropagation(root, best_node, winner, total_visit_count);
-				end_time = clock();
-				//total_time += (end_time - start_time);
-				total_time = (double)(end_time-start_time);
-				//std::cout <<"This search cost:" << end_time - start_time << "ms" << std::endl;
+					++total_visit_count;
+					backpropagation(root, best_node, winner, total_visit_count);
+					end_time = clock();
+					//total_time += (end_time - start_time);
+					total_time = (double)(end_time-start_time);
+					//std::cout <<"This search cost:" << end_time - start_time << "ms" << std::endl;
+				}	
 			}
+			else {
+				int cnt = 0;
+				
+				while (cnt < simulation_count) {
+					Node* best_node = selection(root);
+
+					expension(best_node);
+					winner = simulation(best_node);
+
+					++total_visit_count;
+					backpropagation(root, best_node, winner, total_visit_count);
+					++cnt;
+				}
+				
+			}
+			
 
 			action best_action = bestAaction(root);
 			//std::cout << "take action : " << best_action << std::endl;
@@ -328,6 +347,7 @@ private:
 	std::vector<action::place> space, white_space, black_space;
 	board::piece_type who;
 	std::string action_mode;
+	int simulation_count = 0;
 	clock_t timeout = 1000;
 	//int step_count = 0;
 	//double time_schedule[36] = {0.2, 0.2, 0.2, 0.4, 0.4, 0.4,
