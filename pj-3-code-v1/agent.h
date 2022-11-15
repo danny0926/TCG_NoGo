@@ -15,6 +15,7 @@
 #include <type_traits>
 #include <algorithm>
 #include <fstream>
+#include <omp.h>
 #include "board.h"
 #include "action.h"
 
@@ -224,7 +225,7 @@ public:
 		}
 	}
 	
-	action bestAaction(Node* node) {
+	void bestAction(Node* node, action *best_action, int *best_idx) {
 		int child_idx = -1;
 		int max_visit_count = 0;
 		
@@ -235,9 +236,11 @@ public:
 				child_idx = i;
 			}
 		}
-		
-		if(child_idx == -1) return action();
-		return node->children[child_idx]->last_action;
+		*best_idx = child_idx;
+		if(child_idx == -1) *best_action = action();
+		else *best_action = node->children[child_idx]->last_action;
+		//if(child_idx == -1) return action();
+		//return node->children[child_idx]->last_action;
 	}
 	
 	void delete_tree(Node* node) {
@@ -250,7 +253,39 @@ public:
 			node->children.clear();
 		}
 	}
+	/* only can use simulation arg  */
+	void tree_policy(Node* root) {
+		board::piece_type winner;
+		int total_visit_count = 0;
+		int cnt = 0;
+		while (cnt < simulation_count) {
+			Node* best_node = selection(root);
+
+			expension(best_node);
+			winner = simulation(best_node);
+			++total_visit_count;
+			backpropagation(root, best_node, winner, total_visit_count);
+			++cnt;
+		}
+	}
 	/******************* end of MCTS's tools **************************/
+
+
+
+	/****************** begin of parallel MCTS's tools ********************/
+	const void parallelMCTS(std::vector<Node*> roots) {
+		omp_set_num_threads(thread_num);
+		//std::cout << "There are " << omp_get_num_threads() << " can be used\n";
+	
+			
+		#pragma omp parallel
+		{
+			int id = omp_get_thread_num();
+			tree_policy(roots[id]);
+		}
+		
+	}
+	/****************** end of parallel MCTS's tools ********************/
 
 	virtual action take_action(const board& state) {
 		// default action : random
@@ -272,67 +307,111 @@ public:
 			Node* root = new Node;
 			board::piece_type winner;
 			int total_visit_count = 0;
-			//int empty_space = 0;
-			//for(int i = 0; i < 9; ++i) {
-			//	for(int j = 0; j < 9; ++j) {
-			//		if(state[i][j] == board::empty)
-			//			++empty_space;
-			//	}
-			//}
-			//step_count = 36 - empty_space/2;
 			
 			root->state = state;
 			root->who = (who == board::white ? board::black : board::white);
 			expension(root);
-			//end_time = clock();
-			//total_time += (end_time - start_time);
-
-			//std::cout << root->who << " is playing " << std::endl;
 			
 			
 			// default time limit = 1s //
 			if (simulation_count == 0) { 
 				while(total_time < timeout) {
-					//start_time = clock();
-				
+									
 					Node* best_node = selection(root);
-					//std::cout << "choose the node with state: " << std::endl;
-					//std::cout << best_node->state << std::endl;
 					expension(best_node);
 					winner = simulation(best_node);
-					//std::cout << winner << " in the simulation " << std::endl;
 				
 					++total_visit_count;
 					backpropagation(root, best_node, winner, total_visit_count);
 					end_time = clock();
-					//total_time += (end_time - start_time);
+
 					total_time = (double)(end_time-start_time);
-					//std::cout <<"This search cost:" << end_time - start_time << "ms" << std::endl;
 				}	
 			}
 			else {
 				int cnt = 0;
 				
 				while (cnt < simulation_count) {
-					Node* best_node = selection(root);
+					
+					 Node* best_node = selection(root);
 
 					expension(best_node);
 					winner = simulation(best_node);
 
 					++total_visit_count;
 					backpropagation(root, best_node, winner, total_visit_count);
+					
+					//tree_policy(root, winner, total_visit_count);
 					++cnt;
 				}
 				
 			}
-			
-
-			action best_action = bestAaction(root);
+			action best_action;
+			int best_idx;
+			bestAction(root, &best_action, &best_idx);
+			//action best_action = bestAction(root);
 			//std::cout << "take action : " << best_action << std::endl;
 			delete_tree(root);
 			free(root);
 			
 			return best_action;
+		}
+		else if (action_mode == "MCTS-parallel") {
+			//std::cout << state << std::endl;
+			std::vector<Node*> roots(thread_num);
+
+			for (int i = 0; i < thread_num; ++i) {
+				roots[i] = new Node;
+				roots[i]->state = state;
+				roots[i]->who = (who == board::white ? board::black : board::white);
+				expension(roots[i]);
+			}
+			
+			parallelMCTS(roots);
+			
+			std::map<action,  int> candidate;
+			// aggregate count result
+			for (int thread_idx = 0; thread_idx < thread_num; ++thread_idx) {
+				Node* root_temp = roots[thread_idx];
+				action best_action;
+				int best_idx;
+				bestAction(root_temp, &best_action, &best_idx);
+
+				if (best_action != action()) {
+					if(candidate.find(best_action) != candidate.end()) {
+						//candidate[best_action] += root_temp->children[best_idx]->visit_count;
+						++candidate[best_action];
+					}
+					else {
+						//candidate[best_action] = root_temp->children[best_idx]->visit_count;
+						candidate[best_action] = 0;
+					}
+				}
+				std::cout << "root" << thread_idx << "\tbest action : " << best_action << std::endl;
+			}
+			std::map<action, int>::iterator it;
+			std::cout << "In the map ...\n";
+			for (it = candidate.begin(); it != candidate.end(); ++it) {
+				std::cout << it->first << "\t" << it->second << std::endl;
+			}
+			std::cout<< "\n";
+			if (candidate.empty()) {
+				for(int i = 0; i < thread_num; ++i) {
+					delete_tree(roots[i]);
+					free(roots[i]);
+				}
+				std::cout << "there are no legal move\n";
+				return action();
+			}
+			std::map<action, int>::iterator best_choose = std::max_element(candidate.begin(), candidate.end(), [](const std::pair<action, int> x, const std::pair<action, int> y) {return x.second < y.second;});
+
+			for(int i = 0; i < thread_num; ++i) {
+			       	delete_tree(roots[i]);
+				free(roots[i]);
+			}
+			std::cout << "choose action : "	<< best_choose->first << std::endl;
+			return best_choose->first;
+
 		}
 		else if (action_mode == "alpha-beta") {
 			throw std::invalid_argument("not be implemented");
@@ -349,38 +428,5 @@ private:
 	std::string action_mode;
 	int simulation_count = 0;
 	clock_t timeout = 1000;
-	//int step_count = 0;
-	//double time_schedule[36] = {0.2, 0.2, 0.2, 0.4, 0.4, 0.4,
-	//			    0.7, 0.7, 0.7, 1.4, 1.4, 1.4,
-	//			    1.7, 1.7, 1.7, 2.0, 2.0, 2.0,
-	//		   	    1.7, 1.7, 1.7, 1.7, 1.7, 1.7,
-	//			    1.0, 1.0, 1.0, 0.5, 0.5, 0.5,
-	//			    0.4, 0.4, 0.4, 0.2, 0.2, 0.2};
+	int thread_num = 4;   /* default thread number = 4  */
 };
-
-/*
-class MCTS_agent : public random_agent {
-public:
-	MCTS_player(const std::string& args = "") : random_agent("name=random role=unknown " + args),
-		white_space(board::size_x * board::size_y), black_space(board::size_x * board::size_y), 
-		who(board::empty) {
-		if (name().find_first_of("[]():; ") != std::string::npos)
-			throw std::invalid_argument("invalid name: " + name());
-		if (role() == "black") who = board::black;
-		if (role() == "white") who = board::white;
-		if (who == board::empty)
-			throw std::invalid_argument("invalid role: " + role());
-		for (size_t i = 0; i < white_space.size(); ++i)
-			white_space[i] = action::place(i, board::white);
-		for (size_t i = 0; i < black_space.size(); ++i)
-			black_space[i] = action::place(i, board::black);
-	}
-	
-	
-	
-
-private:
-	std::vector<action::place> white_space, black_space;
-	board::piece_type who;
-};
-*/
