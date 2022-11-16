@@ -278,14 +278,24 @@ public:
 		//std::cout << "There are " << omp_get_num_threads() << " can be used\n";
 	
 			
-		#pragma omp parallel
-		{
-			int id = omp_get_thread_num();
-			tree_policy(roots[id]);
+		//#pragma omp parallel for
+		for (int i = 0; i < thread_num; ++i) {
+			int count_sim = 0;
+
+			while (count_sim < simulation_count) {
+				tree_policy(roots[i]);
+				++count_sim;
+			}
+			std::cout << "thread " << i << "   current count_sim : " << count_sim << std::endl;
 		}
 		
 	}
 	/****************** end of parallel MCTS's tools ********************/
+
+
+	void printNode(Node* node) {
+		std::cout << "##########################\n" << "win_count : " << node->win_count << std::endl << "visit_count : " << node->visit_count << std::endl << "UCT_value : " << node->UCT_value << std::endl << "piece_type : " << node->who << std::endl << "##########################\n";
+	}
 
 	virtual action take_action(const board& state) {
 		// default action : random
@@ -368,6 +378,11 @@ public:
 			}
 			
 			parallelMCTS(roots);
+			for(int i = 0; i < thread_num; ++i) {
+				std::cout << "root " << i << std::endl;
+				printNode(roots[i]);
+				std::cout << "\n";
+			}
 			
 			std::map<action,  int> candidate;
 			// aggregate count result
