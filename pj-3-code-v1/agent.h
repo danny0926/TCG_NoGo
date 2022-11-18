@@ -167,18 +167,23 @@ public:
 	}
 	
 	/* return the winner */
-	board::piece_type simulation(Node* root) {
+	board::piece_type simulation(Node* root, bool random_open = false) {
 		bool terminal = false;
 		board state = root->state;
 		board::piece_type who = root->who;
 		
+		if(random_open == true) {
+			std::default_random_engine engine2(time(0) + omp_get_thread_num());
+			engine = engine2;
+		}
+
 		while(terminal == false) {
 			/* there are no legal move -> terminal */
 			terminal = true;
 			
 			/*rival's round*/
 			who = (who == board::white ? board::black : board::white);
-				
+
 			if (who == board::black) {
 				/* place randomly , apply the first legal move*/
 				std::shuffle(black_space.begin(), black_space.end(), engine);
@@ -230,12 +235,13 @@ public:
 		int max_visit_count = 0;
 		
 		for(size_t i = 0; i < node->children.size(); ++i) {
-					
+			//std::cout << "id " << i << " " << node->children[i]->visit_count << "\n";	
 			if(node->children[i]->visit_count > max_visit_count) {
 				max_visit_count = node->children[i]->visit_count;
 				child_idx = i;
 			}
 		}
+		//std::cout << "\n";
 		*best_idx = child_idx;
 		if(child_idx == -1) *best_action = action();
 		else *best_action = node->children[child_idx]->last_action;
@@ -254,37 +260,61 @@ public:
 		}
 	}
 	/* only can use simulation arg  */
-	void tree_policy(Node* root, board::piece_type &winner, int &total_visit_count) {
+	Node* tree_policy(Node* root, bool random_open=true) {
+		int cnt = 0;
+		board::piece_type winner;
+		int total_visit_count = 0;
 		
-		Node* best_node = selection(root);
+		while (cnt < simulation_count) {
+			Node* best_node = selection(root);
 
-		expension(best_node);
-		winner = simulation(best_node);
-		++total_visit_count;
-		backpropagation(root, best_node, winner, total_visit_count);
+			expension(best_node);
+			winner = simulation(best_node, random_open);
+			++total_visit_count;
+			backpropagation(root, best_node, winner, total_visit_count);
+			++cnt;
+		}
+		//#pragma omp critical
+		//{
+		//	std::cout << "thread " << omp_get_thread_num() << " : cnt = " << cnt << std::endl;
+		//}
+		return root;
 	}
 	/******************* end of MCTS's tools **************************/
 
 
 
 	/****************** begin of parallel MCTS's tools ********************/
-	const void parallelMCTS(std::vector<Node*>& roots) {
+	void parallelMCTS(std::vector<Node*>& roots) {
 		omp_set_num_threads(thread_num);
 		//std::cout << "There are " << omp_get_num_threads() << " can be used\n";
 		
+		Node* temp_node = new Node;
 		if (simulation_count > 0) {	
 			//#pragma omp parallel for
 			for (int i = 0; i < thread_num; ++i) {
-				int count_sim = 0;
-				int total_visit_count = 0;
-				board::piece_type winner;
-				while (count_sim < simulation_count) {
-					tree_policy(roots[i], winner, total_visit_count);
-					++count_sim;
+			//	#pragma omp critical
+			//	{
+			//		std::cout << "before tree policy, root " << omp_get_thread_num() << std::endl;
+			//		
+			//		printNode(roots[i]);
+			//	}
+				temp_node = tree_policy(roots[omp_get_thread_num()]);
+				#pragma omp critical
+				{
+					roots[omp_get_thread_num()] = temp_node;
 				}
-				//std::cout << "thread " << i << "   current count_sim : " << count_sim << std::endl;
+
+			//	#pragma omp critical
+			//	{
+			//		std::cout << "thread " << omp_get_thread_num() << "   done\n";
+			//		std::cout << "after tree policy, root " << omp_get_thread_num() << std::endl;
+
+			//		printNode(roots[i]);
+			//	}
 			}
 		}
+	
 		else {
 			//#pragma omp parallel for	
 			for (int i = 0; i < thread_num; ++i) {
@@ -293,7 +323,7 @@ public:
 				int total_visit_count = 0;
 				board::piece_type winner;
 				while(total_time < timeout) {
-					tree_policy(roots[i], winner, total_visit_count);
+					roots[i] = tree_policy(roots[i]);
 					end_time = clock();
 					total_time = (end_time - start_time);
 				}
@@ -309,6 +339,7 @@ public:
 	}
 
 	virtual action take_action(const board& state) {
+
 		// default action : random
 		if (action_mode == "random" or action_mode.empty()){
 			std::shuffle(space.begin(), space.end(), engine);
@@ -394,39 +425,55 @@ public:
 			//	printNode(roots[i]);
 			//	std::cout << "\n";
 			//}
-			
+
 			std::map<action,  int> candidate;
+			int bound = roots[0]->children.size();
+			
+			//std::cout << "root0...\n";
+			//for(int i = 0 ; i < bound; ++i) {
+			//	std::cout << "id " << i <<"   " << roots[0]->children[i]->visit_count << "\n";
+			//}
+
 			// aggregate count result
-			for (int thread_idx = 0; thread_idx < thread_num; ++thread_idx) {
+			for (int thread_idx = 1; thread_idx < thread_num; ++thread_idx) {
 				Node* root_temp = roots[thread_idx];
-				action best_action;
-				int best_idx;
+				//action best_action;
+				//int best_idx;
+				//std::cout << "root" << thread_idx << "...\n";
+				//std::vector<Node*>::iterator it;
+				for(int i = 0; i < bound ;++i) {
+					//std::cout << "id " << i <<"   " << roots[thread_idx]->children[i]->visit_count << "\n";
+					roots[0]->children[i]->visit_count += roots[thread_idx]->children[i]->visit_count;
+				}
+				/*
 				bestAction(root_temp, &best_action, &best_idx);
 
 				if (best_action != action()) {
 					if(candidate.find(best_action) != candidate.end()) {
-						//candidate[best_action] += root_temp->children[best_idx]->visit_count;
-						++candidate[best_action];
+						candidate[best_action] += root_temp->children[best_idx]->visit_count;
+						//++candidate[best_action];
 					}
 					else {
-						//candidate[best_action] = root_temp->children[best_idx]->visit_count;
-						candidate[best_action] = 0;
+						candidate[best_action] = root_temp->children[best_idx]->visit_count;
+						//candidate[best_action] = 0;
 					}
 				}
 				//std::cout << "root" << thread_idx << "\tbest action : " << best_action << std::endl;
+				*/
 			}
+			/*
 			std::map<action, int>::iterator it;
-			//std::cout << "In the map ...\n";
-			//for (it = candidate.begin(); it != candidate.end(); ++it) {
-			//	std::cout << it->first << "\t" << it->second << std::endl;
-			//}
-			//std::cout<< "\n";
+			std::cout << "In the map ...\n";
+			for (it = candidate.begin(); it != candidate.end(); ++it) {
+				std::cout << it->first << "\t" << it->second << std::endl;
+			}
+			std::cout<< "\n";
 			if (candidate.empty()) {
 				for(int i = 0; i < thread_num; ++i) {
 					delete_tree(roots[i]);
 					free(roots[i]);
 				}
-				//std::cout << "there are no legal move\n";
+				std::cout << "there are no legal move\n";
 				return action();
 			}
 			std::map<action, int>::iterator best_choose = std::max_element(candidate.begin(), candidate.end(), [](const std::pair<action, int> x, const std::pair<action, int> y) {return x.second < y.second;});
@@ -435,8 +482,22 @@ public:
 			       	delete_tree(roots[i]);
 				free(roots[i]);
 			}
-			//std::cout << "choose action : "	<< best_choose->first << std::endl;
+			std::cout << "choose action : "	<< best_choose->first << std::endl;
 			return best_choose->first;
+			*/
+			//std::cout << "roots 0 ...\n";
+			//for(int i = 0; i < bound; ++i) {
+			//	std::cout << "id " << i <<"   " << roots[0]->children[i]->visit_count << "\n";
+			//}
+			int best_index;
+			action best_action;
+			bestAction(roots[0], &best_action, &best_index);
+			//std::cout << "best action : " << best_action << "\n";
+			for(int i = 0; i < thread_num; ++i) {
+				delete_tree(roots[i]);
+				free(roots[i]);
+			}
+			return best_action;
 
 		}
 		else if (action_mode == "alpha-beta") {
@@ -454,5 +515,5 @@ private:
 	std::string action_mode;
 	int simulation_count = 0;
 	clock_t timeout = 1000;
-	int thread_num = 4;   /* default thread number = 4  */
+	int thread_num = 2;   /* default thread number = 4  */
 };
