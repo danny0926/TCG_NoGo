@@ -99,6 +99,7 @@ public:
 		if (meta.find("search") != meta.end()) action_mode = (std::string)meta["search"];
 		if (meta.find("timeout") != meta.end()) timeout = (clock_t)meta["timeout"];
 		if (meta.find("simulation") != meta.end()) simulation_count = (int)meta["simulation"];
+		if (timeout != 0 and simulation_count != 0) std::cout << "use simulation args\n";
 		if (role() == "black") who = board::black;
 		if (role() == "white") who = board::white;
 		if (who == board::empty)
@@ -177,7 +178,8 @@ public:
 			std::default_random_engine engine2(time(0) + omp_get_thread_num());
 			engine = engine2;
 		}
-
+		#pragma omp critical
+		{
 		while(terminal == false) {
 			/* there are no legal move -> terminal */
 			terminal = true;
@@ -185,19 +187,28 @@ public:
 			/*rival's round*/
 			who = (who == board::white ? board::black : board::white);
 
+			
 			if (who == board::black) {
 				/* place randomly , apply the first legal move*/
+				//#pragma omp critical
+				//{	
 				std::shuffle(black_space.begin(), black_space.end(), engine);
+				
+				
 				for(const action::place& move : black_space) {
 					board after = state;
+					
 					if (move.apply(after) == board::legal) {
 						move.apply(state);
 						terminal = false;
 						break;
 					}
 				}
+				//}
+				
 			}
-			else if (who == board::white) {
+			
+			if (who == board::white) {
 				/* place randomly , apply the first legal move*/
 				std::shuffle(white_space.begin(), white_space.end(), engine);
 				for(const action::place& move : white_space) {
@@ -210,6 +221,8 @@ public:
 				}
 			}
 		}
+		}
+		
 		/*I have no legal move, rival win*/
 		return (who == board::white ? board::black : board::white);
 	}
@@ -231,7 +244,7 @@ public:
 		}
 	}
 	
-	void bestAction(Node* node, action *best_action, int *best_idx) {
+	action bestAction(Node* node) {
 		int child_idx = -1;
 		int max_visit_count = 0;
 		
@@ -243,11 +256,8 @@ public:
 			}
 		}
 		//std::cout << "\n";
-		*best_idx = child_idx;
-		if(child_idx == -1) *best_action = action();
-		else *best_action = node->children[child_idx]->last_action;
-		//if(child_idx == -1) return action();
-		//return node->children[child_idx]->last_action;
+		if(child_idx == -1) return action();
+		return node->children[child_idx]->last_action;
 	}
 	
 	void delete_tree(Node* node) {
@@ -339,13 +349,18 @@ public:
 
 
 	void printNode(Node* node) {
-		std::cout << "##########################\n" << "win_count : " << node->win_count << std::endl << "visit_count : " << node->visit_count << std::endl << "UCT_value : " << node->UCT_value << std::endl << "piece_type : " << node->who << std::endl << "##########################\n";
+		std::cout << "##########################\n"
+		       	  << "win_count : " << node->win_count << std::endl
+			  << "visit_count : " << node->visit_count << std::endl 
+			  << "UCT_value : " << node->UCT_value << std::endl 
+			  << "piece_type : " << node->who << std::endl 
+			  << "##########################\n";
 	}
 
 	virtual action take_action(const board& state) {
 		
 		//board state_ = endGame();
-		//std::cout<<state_;
+		//std::cout<<state;
 		//sleep(5);
 		
 
@@ -355,7 +370,7 @@ public:
 			for (const action::place& move : space) {
 				board after = state;
 				if (move.apply(after) == board::legal) {
-					//std::cout << state << "\n";
+					//std::cout << move << "\n";
 					return move;
 				}
 			}
@@ -373,7 +388,7 @@ public:
 			int total_visit_count = 0;
 			
 			root->state = state;
-			std::cout << root->state << "\n";
+			//std::cout << root->state << "\n";
 			root->who = (who == board::white ? board::black : board::white);
 			expension(root);
 			
@@ -412,8 +427,7 @@ public:
 				
 			}
 			action best_action;
-			int best_idx;
-			bestAction(root, &best_action, &best_idx);
+			best_action = bestAction(root);
 			//action best_action = bestAction(root);
 			//std::cout << "take action : " << best_action << std::endl;
 			delete_tree(root);
@@ -421,15 +435,17 @@ public:
 			return best_action;
 		}
 		else if (action_mode == "MCTS-parallel") {
-			//std::cout << state << std::endl;
-			std::vector<Node*> roots(thread_num);
-
-			for (int i = 0; i < thread_num; ++i) {
-				roots[i] = new Node;
-				roots[i]->state = state;
-				roots[i]->who = (who == board::white ? board::black : board::white);
-				expension(roots[i]);
-			}
+			omp_set_num_threads(thread_num);
+			std::cout << state << std::endl;
+			std::vector<Node*> roots;
+			//std::cout << "black have space : " << black_space.size() << "\n";
+			//std::cout << "white have space : " << white_space.size() << "\n";
+			//for (int i = 0; i < thread_num; ++i) {
+			//	roots[i] = new Node;
+			//	roots[i]->state = state;
+			//	roots[i]->who = (who == board::white ? board::black : board::white);
+			//	expension(roots[i]);
+			//}
 
 
 			if (simulation_count == 0) {
@@ -438,24 +454,39 @@ public:
 			else {
 				//int cnt = 0, total_visit_count = 0;
 				//board::piece_type winner;
-				//#pragma omp parallel for
+				#pragma omp parallel for
 				for(int i = 0; i < thread_num; ++i) {
 					int cnt=0, total_visit_count=0;
 					board::piece_type winner;
+
+					Node* temp_node = new Node;
+					temp_node->state = state;
+					temp_node->who = (who == board::white ? board::black : board::white);
+					expension(temp_node);
+					#pragma omp critical
+					{
+					std::cout << "thread " << i << "has children size = " << temp_node->children.size() << "\n";
+					}
 					while (cnt < simulation_count) {
-						Node* best_node = selection(roots[i]);
+						Node* best_node = selection(temp_node);
 						
-
-						//std::cout << "thread " << i << " choose :\n";
-						//printNode(best_node);
-
-
 						expension(best_node);
-						winner = simulation(best_node, false);
+						//#pragma omp critical
+						//{	
+						winner = simulation(best_node, true);
+						//}
+						
 						++total_visit_count;
-						backpropagation(roots[i], best_node, winner, total_visit_count);
+						
+						backpropagation(temp_node, best_node, winner, total_visit_count);
 						++cnt;
+						
+					}
 
+					#pragma omp critical
+					{
+						printNode(temp_node);
+						roots.emplace_back(temp_node);
 					}
 				}
 			}
@@ -469,7 +500,8 @@ public:
 			//}
 
 			int bound = roots[0]->children.size();
-			
+			if(roots[0]->children.size() == roots[1]->children.size()) std::cout << "2 roots have same size\n";
+			else std::cout << "2 roots do not have same size\n";
 
 			//for(int i = 0; i < thread_num; ++i) {
 			//	std::cout << "thread " << i << ": \n";
@@ -479,33 +511,31 @@ public:
 	
 			//std::cout << "root0...\n";
 			//for(int i = 0 ; i < bound; ++i) {
-				//std::cout << "id " << i <<"   " << roots[0]->children[i]->visit_count << "\n";
+			//	std::cout << "id " << i <<"   " << roots[0]->children[i]->visit_count << "\n";
 				//total += roots[0]->children[i]->visit_count;
 			//}
 			//std::cout << "thread 0 : total visit in children : " << total << "\n";
 
 			// aggregate count result
-			for (int thread_idx = 1; thread_idx < thread_num; ++thread_idx) {
-				Node* root_temp = roots[thread_idx];
+			//for (int thread_idx = 1; thread_idx < thread_num; ++thread_idx) {
+			//	Node* root_temp = roots[thread_idx];
 				//total = 0;
-				//std::cout << "root" << thread_idx << "...\n";
+			//	std::cout << "root" << thread_idx << "...\n";
 				//std::vector<Node*>::iterator it;
-				for(int i = 0; i < bound ;++i) {
-					//std::cout << "id " << i <<"   " << roots[thread_idx]->children[i]->visit_count << "\n";
+			//	for(int i = 0; i < bound ;++i) {
+			//		std::cout << "id " << i <<"   " << roots[thread_idx]->children[i]->visit_count << "\n";
 					//roots[0]->children[i]->visit_count += roots[thread_idx]->children[i]->visit_count;
 					//total += roots[thread_idx]->children[i]->visit_count;
-				}
+			//	}
 				//std::cout << "thread " << thread_idx << " : total visit in children : " << total << "\n";
-			}
+			//}
 
 			//std::cout << "root0"  << "...\n";
 			//for(int i = 0; i < bound; ++i) {
 				//std::cout << "id " << i <<"   " << roots[0]->children[i]->visit_count << "\n";std::cout << "id " << i <<"   " << roots[0]->children[i]->visit_count << "\n";
 			//}
-
-			int best_index;
 			action best_action;
-			bestAction(roots[1], &best_action, &best_index);
+			best_action = bestAction(roots[0]);
 			std::cout << "best action : " << best_action << "\n";
 			//sleep(1);
 			for(int i = 0; i < thread_num; ++i) {
@@ -529,6 +559,6 @@ private:
 	board::piece_type who;
 	std::string action_mode;
 	int simulation_count = 0;
-	clock_t timeout = 1000;
+	clock_t timeout = 0;
 	int thread_num = 2;   /* default thread number = 4  */
 };
