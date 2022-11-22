@@ -15,6 +15,7 @@
 #include <type_traits>
 #include <algorithm>
 #include <fstream>
+#include <unistd.h>
 #include <omp.h>
 #include "board.h"
 #include "action.h"
@@ -291,7 +292,7 @@ public:
 		
 		Node* temp_node = new Node;
 		if (simulation_count > 0) {	
-			//#pragma omp parallel for
+			#pragma omp parallel for private(temp_node)
 			for (int i = 0; i < thread_num; ++i) {
 			//	#pragma omp critical
 			//	{
@@ -299,11 +300,11 @@ public:
 			//		
 			//		printNode(roots[i]);
 			//	}
-				temp_node = tree_policy(roots[omp_get_thread_num()]);
-				#pragma omp critical
-				{
-					roots[omp_get_thread_num()] = temp_node;
-				}
+				temp_node = tree_policy(roots[i]);
+				//#pragma omp critical
+				//{
+					roots[i] = temp_node;
+				//}
 
 			//	#pragma omp critical
 			//	{
@@ -334,20 +335,75 @@ public:
 	/****************** end of parallel MCTS's tools ********************/
 
 
+	/******************* debug tools  **************************/
+
+	board endGame() const{
+		/* one step end game*/
+		//std::vector<int> put_black {2, 5, 8, 11, 12, 14, 15, 17, 24, 26, 27, 28, 30, 31, 34, 35, 40, 41, 44, 49, 50, 52, 53, 54, 56, 57, 63, 69, 75, 76, 79, 80};
+		//std::vector<int> put_white {0, 1, 4, 6, 7, 9, 10, 18, 20, 21, 25, 29, 32, 33, 36, 39, 46, 48, 55, 59, 60, 61, 62, 64, 65, 66, 68, 71, 72, 73, 77, 78, 100};
+		
+		/* four step end game*/
+		//std::vector<int> put_black {2, 5, 8, 11, 12, 14, 15, 17, 24, 26, 27, 28, 30, 31, 34, 35, 40, 41, 44, 49, 50, 52, 53, 54, 56, 57, 63, 69, 75, 76, 79, 80};
+		//std::vector<int> put_white {0, 1, 4, 6, 7, 9, 10, 18, 20, 21, 25, 29, 32, 33, 36, 39, 46, 48, 55, 59, 60, 61, 62, 64, 65, 66, 68, 71, 72, 73, 77, 78};
+		
+		/* ten step end game */
+		std::vector<int> put_black {2, 5, 8, 11, 12, 14, 15, 17, 24, 26, 27, 28, 30, 31, 34, 35, 40, 41, 44, 49, 50, 52, 53, 54, 56, 57, 63, 69, 75, 76, 79, 80};
+		std::vector<int> put_white {0, 1, 4, 6, 7, 9, 10, 18, 20, 21, 25, 29, 32, 33, 36, 39, 46, 48, 55, 59, 60, 61, 62, 64, 65, 66, 68, 71, 72, 73, 77, 78};
+
+		if (put_black.size() == put_white.size()) std::cout << "legal end game\n";
+		
+		board endBoard;
+		std::vector<int>::iterator it_black, it_white;
+		for(it_black = put_black.begin(), it_white = put_white.begin(); (it_black != put_black.end() and it_white != put_white.end()); ++it_black, ++it_white) {
+			if (it_black != put_black.end()) {
+			int x = *it_black / 9;
+			int y = *it_black % 9;
+			int temp = endBoard.place(x, y, board::black);
+			}
+			//if (temp == board::legal) std::cout << "finish put\n";
+			if (it_white != put_white.end()) {
+			int x = *it_white / 9;
+			int y = *it_white % 9;
+			int temp = endBoard.place(x, y, board::white);
+			}
+			//if (temp == board::legal) std::cout << "finish put\n";
+		}
+		/*
+		for(it_white = put_white.begin(); it_white != put_white.end(); ++it_white) {
+			int x = *it_white / 9;
+			int y = *it_white % 9;
+			endBoard.place(x, y, board::white);
+		}
+		*/
+		//std::cout << endBoard << "\n";
+		return endBoard;
+	}
+
+	/******************* debug tools  *************************/
+
+
 	void printNode(Node* node) {
 		std::cout << "##########################\n" << "win_count : " << node->win_count << std::endl << "visit_count : " << node->visit_count << std::endl << "UCT_value : " << node->UCT_value << std::endl << "piece_type : " << node->who << std::endl << "##########################\n";
 	}
 
 	virtual action take_action(const board& state) {
+		
+		//board state_ = endGame();
+		//std::cout<<state_;
+		//sleep(5);
+		
 
 		// default action : random
 		if (action_mode == "random" or action_mode.empty()){
 			std::shuffle(space.begin(), space.end(), engine);
 			for (const action::place& move : space) {
 				board after = state;
-				if (move.apply(after) == board::legal)
+				if (move.apply(after) == board::legal) {
+					//std::cout << state << "\n";
 					return move;
+				}
 			}
+			//std::cout << state << "\n";
 			return action();
 		}
 		
@@ -361,6 +417,7 @@ public:
 			int total_visit_count = 0;
 			
 			root->state = state;
+			std::cout << root->state << "\n";
 			root->who = (who == board::white ? board::black : board::white);
 			expension(root);
 			
@@ -405,7 +462,6 @@ public:
 			//std::cout << "take action : " << best_action << std::endl;
 			delete_tree(root);
 			free(root);
-			
 			return best_action;
 		}
 		else if (action_mode == "MCTS-parallel") {
@@ -418,81 +474,84 @@ public:
 				roots[i]->who = (who == board::white ? board::black : board::white);
 				expension(roots[i]);
 			}
+
+
+			if (simulation_count == 0) {
+				
+			}
+			else {
+				//int cnt = 0, total_visit_count = 0;
+				//board::piece_type winner;
+				//#pragma omp parallel for
+				for(int i = 0; i < thread_num; ++i) {
+					int cnt=0, total_visit_count=0;
+					board::piece_type winner;
+					while (cnt < simulation_count) {
+						Node* best_node = selection(roots[i]);
+						
+
+						//std::cout << "thread " << i << " choose :\n";
+						//printNode(best_node);
+
+
+						expension(best_node);
+						winner = simulation(best_node, false);
+						++total_visit_count;
+						backpropagation(roots[i], best_node, winner, total_visit_count);
+						++cnt;
+
+					}
+				}
+			}
+
 			
-			parallelMCTS(roots);
+			//parallelMCTS(roots);
 			//for(int i = 0; i < thread_num; ++i) {
 			//	std::cout << "root " << i << std::endl;
 			//	printNode(roots[i]);
 			//	std::cout << "\n";
 			//}
 
-			std::map<action,  int> candidate;
 			int bound = roots[0]->children.size();
 			
+
+			//for(int i = 0; i < thread_num; ++i) {
+			//	std::cout << "thread " << i << ": \n";
+			//	std::cout << roots[i]->visit_count;
+			//	std::cout << "\n";
+			//}
+	
 			//std::cout << "root0...\n";
 			//for(int i = 0 ; i < bound; ++i) {
-			//	std::cout << "id " << i <<"   " << roots[0]->children[i]->visit_count << "\n";
+				//std::cout << "id " << i <<"   " << roots[0]->children[i]->visit_count << "\n";
+				//total += roots[0]->children[i]->visit_count;
 			//}
+			//std::cout << "thread 0 : total visit in children : " << total << "\n";
 
 			// aggregate count result
 			for (int thread_idx = 1; thread_idx < thread_num; ++thread_idx) {
 				Node* root_temp = roots[thread_idx];
-				//action best_action;
-				//int best_idx;
+				//total = 0;
 				//std::cout << "root" << thread_idx << "...\n";
 				//std::vector<Node*>::iterator it;
 				for(int i = 0; i < bound ;++i) {
 					//std::cout << "id " << i <<"   " << roots[thread_idx]->children[i]->visit_count << "\n";
-					roots[0]->children[i]->visit_count += roots[thread_idx]->children[i]->visit_count;
+					//roots[0]->children[i]->visit_count += roots[thread_idx]->children[i]->visit_count;
+					//total += roots[thread_idx]->children[i]->visit_count;
 				}
-				/*
-				bestAction(root_temp, &best_action, &best_idx);
+				//std::cout << "thread " << thread_idx << " : total visit in children : " << total << "\n";
+			}
 
-				if (best_action != action()) {
-					if(candidate.find(best_action) != candidate.end()) {
-						candidate[best_action] += root_temp->children[best_idx]->visit_count;
-						//++candidate[best_action];
-					}
-					else {
-						candidate[best_action] = root_temp->children[best_idx]->visit_count;
-						//candidate[best_action] = 0;
-					}
-				}
-				//std::cout << "root" << thread_idx << "\tbest action : " << best_action << std::endl;
-				*/
-			}
-			/*
-			std::map<action, int>::iterator it;
-			std::cout << "In the map ...\n";
-			for (it = candidate.begin(); it != candidate.end(); ++it) {
-				std::cout << it->first << "\t" << it->second << std::endl;
-			}
-			std::cout<< "\n";
-			if (candidate.empty()) {
-				for(int i = 0; i < thread_num; ++i) {
-					delete_tree(roots[i]);
-					free(roots[i]);
-				}
-				std::cout << "there are no legal move\n";
-				return action();
-			}
-			std::map<action, int>::iterator best_choose = std::max_element(candidate.begin(), candidate.end(), [](const std::pair<action, int> x, const std::pair<action, int> y) {return x.second < y.second;});
-
-			for(int i = 0; i < thread_num; ++i) {
-			       	delete_tree(roots[i]);
-				free(roots[i]);
-			}
-			std::cout << "choose action : "	<< best_choose->first << std::endl;
-			return best_choose->first;
-			*/
-			//std::cout << "roots 0 ...\n";
+			//std::cout << "root0"  << "...\n";
 			//for(int i = 0; i < bound; ++i) {
-			//	std::cout << "id " << i <<"   " << roots[0]->children[i]->visit_count << "\n";
+				//std::cout << "id " << i <<"   " << roots[0]->children[i]->visit_count << "\n";std::cout << "id " << i <<"   " << roots[0]->children[i]->visit_count << "\n";
 			//}
+
 			int best_index;
 			action best_action;
-			bestAction(roots[0], &best_action, &best_index);
-			//std::cout << "best action : " << best_action << "\n";
+			bestAction(roots[1], &best_action, &best_index);
+			std::cout << "best action : " << best_action << "\n";
+			//sleep(1);
 			for(int i = 0; i < thread_num; ++i) {
 				delete_tree(roots[i]);
 				free(roots[i]);
