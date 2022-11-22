@@ -335,51 +335,7 @@ public:
 	/****************** end of parallel MCTS's tools ********************/
 
 
-	/******************* debug tools  **************************/
-
-	board endGame() const{
-		/* one step end game*/
-		//std::vector<int> put_black {2, 5, 8, 11, 12, 14, 15, 17, 24, 26, 27, 28, 30, 31, 34, 35, 40, 41, 44, 49, 50, 52, 53, 54, 56, 57, 63, 69, 75, 76, 79, 80};
-		//std::vector<int> put_white {0, 1, 4, 6, 7, 9, 10, 18, 20, 21, 25, 29, 32, 33, 36, 39, 46, 48, 55, 59, 60, 61, 62, 64, 65, 66, 68, 71, 72, 73, 77, 78, 100};
-		
-		/* four step end game*/
-		//std::vector<int> put_black {2, 5, 8, 11, 12, 14, 15, 17, 24, 26, 27, 28, 30, 31, 34, 35, 40, 41, 44, 49, 50, 52, 53, 54, 56, 57, 63, 69, 75, 76, 79, 80};
-		//std::vector<int> put_white {0, 1, 4, 6, 7, 9, 10, 18, 20, 21, 25, 29, 32, 33, 36, 39, 46, 48, 55, 59, 60, 61, 62, 64, 65, 66, 68, 71, 72, 73, 77, 78};
-		
-		/* ten step end game */
-		std::vector<int> put_black {2, 5, 8, 11, 12, 14, 15, 17, 24, 26, 27, 28, 30, 31, 34, 35, 40, 41, 44, 49, 50, 52, 53, 54, 56, 57, 63, 69, 75, 76, 79, 80};
-		std::vector<int> put_white {0, 1, 4, 6, 7, 9, 10, 18, 20, 21, 25, 29, 32, 33, 36, 39, 46, 48, 55, 59, 60, 61, 62, 64, 65, 66, 68, 71, 72, 73, 77, 78};
-
-		if (put_black.size() == put_white.size()) std::cout << "legal end game\n";
-		
-		board endBoard;
-		std::vector<int>::iterator it_black, it_white;
-		for(it_black = put_black.begin(), it_white = put_white.begin(); (it_black != put_black.end() and it_white != put_white.end()); ++it_black, ++it_white) {
-			if (it_black != put_black.end()) {
-			int x = *it_black / 9;
-			int y = *it_black % 9;
-			int temp = endBoard.place(x, y, board::black);
-			}
-			//if (temp == board::legal) std::cout << "finish put\n";
-			if (it_white != put_white.end()) {
-			int x = *it_white / 9;
-			int y = *it_white % 9;
-			int temp = endBoard.place(x, y, board::white);
-			}
-			//if (temp == board::legal) std::cout << "finish put\n";
-		}
-		/*
-		for(it_white = put_white.begin(); it_white != put_white.end(); ++it_white) {
-			int x = *it_white / 9;
-			int y = *it_white % 9;
-			endBoard.place(x, y, board::white);
-		}
-		*/
-		//std::cout << endBoard << "\n";
-		return endBoard;
-	}
-
-	/******************* debug tools  *************************/
+	
 
 
 	void printNode(Node* node) {
