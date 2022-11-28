@@ -100,6 +100,7 @@ public:
 		if (meta.find("search") != meta.end()) action_mode = (std::string)meta["search"];
 		if (meta.find("timeout") != meta.end()) timeout = (clock_t)meta["timeout"];
 		if (meta.find("simulation") != meta.end()) simulation_count = (int)meta["simulation"];
+		if (meta.find("thread") != meta.end()) thread_num = (int)meta["thread"];
 		if (timeout != 0 and simulation_count != 0) std::cout << "use simulation args\n";
 		if (role() == "black") who = board::black;
 		if (role() == "white") who = board::white;
@@ -114,7 +115,8 @@ public:
 	}
 	/******************* begin of MCTS's tools **************************/
 	void computeUCT(Node* node, int total_visit_count) {
-		node->UCT_value = ((double)node->win_count/node->visit_count) + 0.5*sqrt(log((double)total_visit_count)/node->visit_count);
+		int visit_cnt = node->visit_count;
+		node->UCT_value = ((double)node->win_count/visit_cnt) + 0.5*sqrt(log((double)total_visit_count)/visit_cnt);
 	}
 	
 	void expension(Node* parent_node) {
@@ -158,7 +160,8 @@ public:
 		while(node->children.empty() == false) {
 			double max_UCT_value = 0;
 			int select_idx = 0;
-			for(size_t i = 0; i < node->children.size(); ++i) {
+			int bound = node->children.size();
+			for(size_t i = 0; i < bound; ++i) {
 				if(max_UCT_value < node->children[i]->UCT_value) {
 					max_UCT_value = node->children[i]->UCT_value;
 					select_idx = i;
@@ -288,6 +291,14 @@ public:
 			  << "##########################\n";
 	}
 
+	virtual void open_episode(const std::string& tag) {
+		start_time = clock();
+	}
+	virtual void close_episode(const std::string& tag) {
+		end_time = clock();
+		//std::cout << who << " use time = " << (double)(end_time - start_time)/CLOCKS_PER_SEC << "second \n";
+	}
+
 	virtual action take_action(const board& state) {
 
 		// default action : random
@@ -320,8 +331,16 @@ public:
 			
 			
 			// default time limit = 1s //
-			if (simulation_count == 0) { 
-				while(total_time < timeout) {
+			if (timeout > 0) {
+				int empty_space = 0;
+				for (int i = 0; i < 9; ++i) {
+					for (int j = 0; j < 9; ++j) {
+						if (state[i][j] == board::empty)
+							++empty_space;
+					}
+				}
+				empty_space = 36 - empty_space / 2;	
+				while(total_time < 0.95 * time_schedule[empty_space]) {
 									
 					Node* best_node = selection(root);
 					expension(best_node);
@@ -331,7 +350,7 @@ public:
 					backpropagation(root, best_node, winner, total_visit_count);
 					end_time = clock();
 
-					total_time = (double)(end_time-start_time);
+					total_time = (double)(end_time-start_time)/CLOCKS_PER_SEC;
 				}	
 			}
 			else {
@@ -361,28 +380,28 @@ public:
 		}
 		else if (action_mode == "MCTS-parallel") {
 			omp_set_num_threads(thread_num);
-			std::cout << state << std::endl;
+			//std::cout << state << std::endl;
 			std::vector<Node*> roots(thread_num);
 			
 
 
-			if (simulation_count == 0) {
+			if (timeout > 0) {
 				
 			}
-			else {
+			if (simulation_count > 0) {
+				clock_t start_time = clock(), end_time;
 				#pragma omp parallel for
 				for(int i = 0; i < thread_num; ++i) {
-					int cnt=0, total_visit_count=0;
+					int total_visit_count = 0;
 					board::piece_type winner;
 
 					roots[i] = new Node;
 					roots[i]->state = state;
 					roots[i]->who = (who == board::white ? board::black : board::white);
-					#pragma omp critical
-					{
+					
 					expension(roots[i]);
-					}
-					while (cnt < simulation_count) {
+					
+					while (total_visit_count < simulation_count) {
 						Node* best_node = selection(roots[i]);
 						
 						expension(best_node);
@@ -392,47 +411,32 @@ public:
 						++total_visit_count;
 						
 						backpropagation(roots[i], best_node, winner, total_visit_count);
-						++cnt;
 						
 					}
+					
 				}
+				end_time = clock();
+				//std::cout << "total cost time at simulation: " << simulation_count << " is :" << (double)(end_time - start_time)/CLOCKS_PER_SEC << " seconds\n";
 			}
 
 			int bound = roots[0]->children.size();
 
-			for(int i = 0; i < thread_num; ++i) {
-				std::cout << "thread " << i << ": \n";
-				std::cout << roots[i]->children.size();
-				std::cout << "\n";
-			}
-	
-			//std::cout << "root0...\n";
-			//for(int i = 0 ; i < bound; ++i) {
-			//	std::cout << "id " << i <<"   " << roots[0]->children[i]->visit_count << "\n";
-				//total += roots[0]->children[i]->visit_count;
-			//}
-			//std::cout << "thread 0 : total visit in children : " << total << "\n";
-
 			// aggregate count result
 			for (int thread_idx = 1; thread_idx < thread_num; ++thread_idx) {
-			//	Node* root_temp = roots[thread_idx];
-				//total = 0;
-			//	std::cout << "root" << thread_idx << "...\n";
-				//std::vector<Node*>::iterator it;
+
 				if (roots[thread_idx]->children.size() != bound) throw std::invalid_argument("children size error");
 				for(int i = 0; i < bound ;++i) {
-			//		std::cout << "id " << i <<"   " << roots[thread_idx]->children[i]->visit_count << "\n";
 					roots[0]->children[i]->visit_count += roots[thread_idx]->children[i]->visit_count;
-					//total += roots[thread_idx]->children[i]->visit_count;
 				}
-				//std::cout << "thread " << thread_idx << " : total visit in children : " << total << "\n";
 			}
+			
 
 			
 			action best_action;
 			best_action = bestAction(roots[0]);
-			std::cout << "best action : " << best_action << "\n";
+			//std::cout << "best action : " << best_action << "\n";
 			//sleep(1);
+			#pragma omp parallel for
 			for(int i = 0; i < thread_num; ++i) {
 				delete_tree(roots[i]);
 				free(roots[i]);
@@ -454,6 +458,12 @@ private:
 	board::piece_type who;
 	std::string action_mode;
 	int simulation_count = 0;
-	clock_t timeout = 0;
-	int thread_num = 2;   /* default thread number = 4  */
+	clock_t timeout = 0, start_time, end_time;
+	int thread_num = 1;   /* default thread number = 4  */
+	double time_schedule[36] = {0.1, 0.1, 0.1, 0.2, 0.2, 0.2, 0.7, 0.7,
+	       			    0.7, 1.4, 1.4, 1.4, 1.5, 1.5, 1.5, 2.0,
+				    2.0, 2.0, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.0,
+				    1.0, 1.0, 0.5, 0.5, 0.5, 0.4, 0.4, 0.4, 0.2,
+				    0.2, 0.2
+				    };
 };
