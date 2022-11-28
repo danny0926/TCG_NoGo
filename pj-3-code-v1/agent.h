@@ -291,13 +291,13 @@ public:
 			  << "##########################\n";
 	}
 
-	virtual void open_episode(const std::string& tag) {
-		start_time = clock();
-	}
-	virtual void close_episode(const std::string& tag) {
-		end_time = clock();
-		//std::cout << who << " use time = " << (double)(end_time - start_time)/CLOCKS_PER_SEC << "second \n";
-	}
+	//virtual void open_episode(const std::string& tag) {
+	//	start_time = clock();
+	//}
+	//virtual void close_episode(const std::string& tag) {
+	//	end_time = clock();
+	//	std::cout << who << " use time = " << (double)(end_time - start_time)/CLOCKS_PER_SEC << "second \n";
+	//}
 
 	virtual action take_action(const board& state) {
 
@@ -389,7 +389,7 @@ public:
 				
 			}
 			if (simulation_count > 0) {
-				clock_t start_time = clock(), end_time;
+				//clock_t start_time = clock(), end_time;
 				#pragma omp parallel for
 				for(int i = 0; i < thread_num; ++i) {
 					int total_visit_count = 0;
@@ -415,7 +415,7 @@ public:
 					}
 					
 				}
-				end_time = clock();
+				//end_time = clock();
 				//std::cout << "total cost time at simulation: " << simulation_count << " is :" << (double)(end_time - start_time)/CLOCKS_PER_SEC << " seconds\n";
 			}
 
@@ -459,7 +459,7 @@ private:
 	std::string action_mode;
 	int simulation_count = 0;
 	clock_t timeout = 0, start_time, end_time;
-	int thread_num = 1;   /* default thread number = 4  */
+	int thread_num = 4;   /* default thread number = 4  */
 	double time_schedule[36] = {0.1, 0.1, 0.1, 0.2, 0.2, 0.2, 0.7, 0.7,
 	       			    0.7, 1.4, 1.4, 1.4, 1.5, 1.5, 1.5, 2.0,
 				    2.0, 2.0, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.0,
