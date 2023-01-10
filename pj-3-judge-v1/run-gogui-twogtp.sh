@@ -1,14 +1,14 @@
 #!/bin/bash
 echo "GoGui-TwoGTP Launcher V20221101"
 # commands for player 1
-P1B='./nogo --shell --name="Hollow-Black" --black="search=MCTS-parallel simulation=4900"'
-P1W='./nogo --shell --name="Hollow-White" --white="search=MCTS-parallel simulation=4900"'
+P1B='./nogo --shell --name="wpyNOGO" --black="search=MCTS simulation=100"'
+P1W='./nogo --shell --name="wpyNOGO" --white="search=MCTS simulation=100"'
 # commands for local player 2
-P2B='./nogo-judge --shell --name="Judge-Weak-Black" --black="strong"'
-P2W='./nogo-judge --shell --name="Judge-Weak-White" --white="strong"'
+#P2B='./nogo-judge --shell --name="Judge-Weak-Black" --black="random"'
+#P2W='./nogo-judge --shell --name="Judge-Weak-White" --white="random"'
 # commands for remote player 2
-#P2B="gogui-client tcglinux1 10000"
-#P2W="gogui-client tcglinux1 10000"
+P2B="gogui-client tcglinux8 12345"
+P2W="gogui-client tcglinux8 12345"
 
 # other settings
 games=${1:-10} # total games to play
